@@ -12,43 +12,19 @@ import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.videoio.VideoCapture;
 
 import com.fazecast.jSerialComm.SerialPort;
-
-class Sensors extends Thread {
-    @Override
-    public void run() {
-        SerialPort current = SerialPort.getCommPort("ttyACM0");
-        current.openPort();
-        if (!current.isOpen()) {
-           
-            System.err.println("Serial port is not open");
-            this.interrupt();
-        }
-        
-        while (true) {
-            while (current.bytesAvailable() == 0)
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            byte[] messageBytes = new byte[current.bytesAvailable()];
-            current.readBytes(messageBytes, messageBytes.length);
-            System.out.println(new String(messageBytes));
-        }
-    }
-    
-}
+import com.fazecast.jSerialComm.SerialPortDataListener;
+import com.fazecast.jSerialComm.SerialPortEvent;
 
 public class App {
 
+    public static String partial = "";
 
     static {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
     public static void main(String[] args) throws Exception {
-        Sensors thread = new Sensors();
-        thread.start();
+        setupSerialPort();
 
         VideoCapture video = new VideoCapture(0);
         while (true) {
@@ -63,7 +39,6 @@ public class App {
                 break;
             }
         }
-        thread.interrupt();
         System.exit(0);
     }
 
@@ -93,5 +68,40 @@ public class App {
             e.printStackTrace();
             return frame;
         }
+    }
+
+    private static void setupSerialPort() {
+        SerialPort current;
+        try { current = SerialPort.getCommPort("ttyACM0"); } catch (Exception e) { return;}
+        current.openPort();
+        if (!current.isOpen()) {
+           
+            System.err.println("Serial port is not open");
+            return;
+        }
+
+        current.addDataListener(new SerialPortDataListener() {
+
+            @Override
+            public int getListeningEvents() {
+                return SerialPort.LISTENING_EVENT_DATA_RECEIVED;
+            }
+
+
+            @Override
+            public void serialEvent(SerialPortEvent event) {
+
+                byte[] messageBytes = event.getReceivedData();
+                for (byte messageByte : messageBytes) {
+                    if ((char) messageByte == '\n') {
+                        System.out.println(partial);
+                        partial = "";
+                        continue;
+                    }
+                    partial += (char) messageByte;
+                }
+            }
+            
+        });
     }
 }

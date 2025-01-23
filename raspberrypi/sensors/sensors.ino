@@ -1,9 +1,9 @@
-const char* message = "howdy y'all";
+const char* message = "howdy y'all\n";
 void setup() {
     Serial.begin(9600);
 }
 
 void loop() {
     Serial.write(message);
-    delay(200);
+    delay(500);
 }
