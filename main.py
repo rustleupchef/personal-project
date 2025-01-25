@@ -14,10 +14,8 @@ def grabPriorityDetections(JSON: str) -> str:
     detections = json.loads(JSON)
     for detection in detections:
         confidence = detection["confidence"]
-        print(f"{type(confidence)=} {confidence}")
         if float(confidence) < 0.6: continue
         name = detection["name"]
-        print(f"{type(name)=} {name=}")
         if name in priorities:
             priorities.remove(name)
             priorities.add(f"{name}s")
@@ -49,7 +47,6 @@ def main():
 
             client,_ = serverSocket.accept()
             length = struct.unpack(">I", client.recv(4))[0]
-            print(length)
             frameBytes = recv_all(client, length)
 
             frameBuffer = np.frombuffer(frameBytes, np.uint8)

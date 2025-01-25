@@ -2,7 +2,6 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
-import java.nio.ByteBuffer;
 
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
@@ -15,15 +14,49 @@ import com.fazecast.jSerialComm.SerialPort;
 import com.fazecast.jSerialComm.SerialPortDataListener;
 import com.fazecast.jSerialComm.SerialPortEvent;
 
+import com.sun.speech.freetts.Voice;
+import com.sun.speech.freetts.VoiceManager;
+
+class Speak extends Thread {
+
+    private String text;
+
+    Speak() {
+
+    }
+
+    Speak(String text) {
+        this.text = text;
+    }
+
+    @Override
+    public void run() {
+        try {
+            Voice voice = VoiceManager.getInstance().getVoice("kevin16");
+            voice.allocate();
+            voice.speak(text);
+            voice.deallocate();
+            Thread.sleep(500);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
 public class App {
 
     public static String partial = "";
+
 
     static {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
+    private static Speak objDetection;
+    private static Speak sensors;
+
     public static void main(String[] args) throws Exception {
+        System.setProperty("freetts.voices", "com.sun.speech.freetts.en.us.cmu_us_kal.KevinVoiceDirectory");
         setupSerialPort();
 
         VideoCapture video = new VideoCapture(0);
@@ -60,7 +93,10 @@ public class App {
             dis.readFully(matArray);
 
             Mat output = Imgcodecs.imdecode(new MatOfByte(matArray), Imgcodecs.IMREAD_COLOR);
-            System.out.println(new String(strArray));
+            if (objDetection == null || !objDetection.isAlive()) {
+                objDetection = new Speak(new String(strArray));
+                objDetection.start();
+            }
             socket.close();
 
             return output;
@@ -72,7 +108,7 @@ public class App {
 
     private static void setupSerialPort() {
         SerialPort current;
-        try { current = SerialPort.getCommPort("ttyACM0"); } catch (Exception e) { return;}
+        try { current = SerialPort.getCommPort("ttyACM0");} catch (Exception e) { return;}
         current.openPort();
         if (!current.isOpen()) {
            
@@ -94,7 +130,10 @@ public class App {
                 byte[] messageBytes = event.getReceivedData();
                 for (byte messageByte : messageBytes) {
                     if ((char) messageByte == '\n') {
-                        System.out.println(partial);
+                        if (sensors == null || !sensors.isAlive()) {
+                            sensors = new Speak(partial);
+                            sensors.start();
+                        }
                         partial = "";
                         continue;
                     }
