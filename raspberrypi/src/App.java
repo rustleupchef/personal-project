@@ -14,35 +14,6 @@ import com.fazecast.jSerialComm.SerialPort;
 import com.fazecast.jSerialComm.SerialPortDataListener;
 import com.fazecast.jSerialComm.SerialPortEvent;
 
-import com.sun.speech.freetts.Voice;
-import com.sun.speech.freetts.VoiceManager;
-
-class Speak extends Thread {
-
-    private String text;
-
-    Speak() {
-
-    }
-
-    Speak(String text) {
-        this.text = text;
-    }
-
-    @Override
-    public void run() {
-        try {
-            Voice voice = VoiceManager.getInstance().getVoice("kevin16");
-            voice.allocate();
-            voice.speak(text);
-            voice.deallocate();
-            Thread.sleep(500);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-}
-
 public class App {
 
     public static String partial = "";
@@ -52,8 +23,11 @@ public class App {
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
     }
 
+    private static Mat frame;
+
     private static Speak objDetection;
     private static Speak sensors;
+    private static Speak ocr;
 
     public static void main(String[] args) throws Exception {
         System.setProperty("freetts.voices", "com.sun.speech.freetts.en.us.cmu_us_kal.KevinVoiceDirectory");
@@ -61,11 +35,11 @@ public class App {
 
         VideoCapture video = new VideoCapture(0);
         while (true) {
-            Mat frame = new Mat();
+            frame = new Mat();
             video.read(frame);
 
-            frame = processs(frame);
-            HighGui.imshow("frame", frame);
+            Mat output = processs(frame);
+            HighGui.imshow("frame", output);
             if (HighGui.waitKey(10) == 27) {
                 video.release();
                 HighGui.destroyAllWindows();
@@ -93,7 +67,7 @@ public class App {
             dis.readFully(matArray);
 
             Mat output = Imgcodecs.imdecode(new MatOfByte(matArray), Imgcodecs.IMREAD_COLOR);
-            if (objDetection == null || !objDetection.isAlive()) {
+            if ((objDetection == null || !objDetection.isAlive()) && (ocr == null || !ocr.isAlive())) {
                 objDetection = new Speak(new String(strArray));
                 objDetection.start();
             }
@@ -109,6 +83,7 @@ public class App {
     private static void setupSerialPort() {
         SerialPort current;
         try { current = SerialPort.getCommPort("ttyACM0");} catch (Exception e) { return;}
+        current.setBaudRate(9600);
         current.openPort();
         if (!current.isOpen()) {
            
@@ -126,18 +101,50 @@ public class App {
 
             @Override
             public void serialEvent(SerialPortEvent event) {
+                String message = new String(event.getReceivedData());
+                for (int i = 0; i < message.length(); i++) {
+                    if (message.charAt(i) == '\n') {
+                        System.out.println(partial);
+                        String[] sensorArray = partial.split(",");
+                        if (sensorArray.length > 1 && sensorArray[1].substring(0, sensorArray[1].length() - 1).equals("0")) {
+                            if (ocr == null || !sensors.isAlive()) {
+                                ocr = new Speak(readText());
+                                ocr.start();
+                            }
+                        }
 
-                byte[] messageBytes = event.getReceivedData();
-                for (byte messageByte : messageBytes) {
-                    if ((char) messageByte == '\n') {
-                        if (sensors == null || !sensors.isAlive()) {
-                            sensors = new Speak(partial);
+                        if ((sensors == null || !sensors.isAlive()) && (ocr == null || !ocr.isAlive())) {
+                            sensors = new Speak(sensorArray[0]);
                             sensors.start();
                         }
                         partial = "";
                         continue;
                     }
-                    partial += (char) messageByte;
+                    partial += message.charAt(i);
+                }
+            }
+
+            private String readText() {
+                if (frame.empty()) return "";
+                try (Socket socket = new Socket("", 1080)) {
+                    DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+            
+                    MatOfByte mob = new MatOfByte();
+                    Imgcodecs.imencode(".jpg", frame, mob);
+                    byte[] inputArray = mob.toArray();
+                    dos.writeInt(inputArray.length);
+                    dos.write(inputArray);
+            
+                    DataInputStream dis = new DataInputStream(socket.getInputStream());
+        
+                    byte[] strArray = new byte[dis.readInt()];
+                    dis.readFully(strArray);
+                    socket.close();
+        
+                    return new String(strArray);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return "";
                 }
             }
             
